@@ -1,3 +1,10 @@
+
+/**
+ * author: yenche123
+ * createdAt: 2020/02/07
+ */
+
+ 
 const functions = require("firebase-functions")
 const admin = require('firebase-admin')
 admin.initializeApp()
