@@ -96,7 +96,13 @@ exports.msgFromLine = functions.https.onRequest(async (req, res) => {
   let msgTxt = message.text || ""
   let twoChars = msgTxt.substring(0, 2)
   if(twoChars === "查看") {
-    checkMsgForOfficer(firstEvent)
+    await checkMsgForOfficer(firstEvent)
+    res.json({})
+    return
+  }
+
+  if(msgTxt === "清空模板") {
+    await clearTempl(firstEvent)
     res.json({})
     return
   }
@@ -112,13 +118,43 @@ exports.msgFromLine = functions.https.onRequest(async (req, res) => {
   let nameReg = /姓名/g
   let nameMatch = msgTxt.match(nameReg)
   if(nameMatch && nameMatch.length > 8) {
-    functions.logger.log("用戶用了舊的方式，測試中")
+    functions.logger.log("用戶用了舊的方式......")
     await handleOldReport(firstEvent)
   }
 
   res.json({})
 })
 
+/***************** 處理清空模板 *************************/
+async function clearTempl(eventObj) {
+  let userId = eventObj.source.userId
+  let groupId = eventObj.source.groupId || ""
+  functions.logger.info("請求清空模板......")
+
+  let displayName = await getUserNickName(userId, groupId)
+  functions.logger.info("displayName: ", displayName)
+  let {ying, lian, no} = getYingLianNoName(displayName)
+  let {isOk, ban, studentNoList, tempMsg} = await getLianTemplAndBreakPoint({ying, lian, no})
+  if(!isOk) {
+    functions.logger.info("getLianTemplAndBreakPoint 為 false")
+    return
+  }
+  let dragonMsg = getEmptyMsg({ying, lian, studentNoList, ban})
+
+  functions.logger.info("清空後的 dragonMsg: ", dragonMsg)
+
+  let sendMsg = tempMsg + dragonMsg
+  sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+
+  let storData = {
+    ying, lian, ban, userId, displayName,
+    msg: dragonMsg, groupId
+  }
+  await storageMessage(storData)
+
+  functions.logger.info("## 執行完 清空模板 ##")
+  return {cyzMsg: "執行完 清空模板"}
+}
 
 /***************** 處理回報 *********************/
 /**** 使用了標準格式 *******/
@@ -198,7 +234,7 @@ async function handleReport(eventObj) {
     msg: dragonMsg, groupId
   }
   await storageMessage(storData)
-  return {}
+  return {cyzMsg: "你執行完了全部"}
 }
 
 /** 使用了傳統接龍格式 */
@@ -210,6 +246,7 @@ async function handleOldReport(eventObj) {
   let message = eventObj.message || {}
   let msgTxt = message.text || ""
   if(!isLegalForDragonStyle(msgTxt)) return
+
   let displayName = await getUserNickName(userId, groupId)
   functions.logger.info("displayName: ", displayName)
   if(!displayName) {
@@ -218,33 +255,58 @@ async function handleOldReport(eventObj) {
   }
   let {ying, lian, no, name} = getYingLianNoName(displayName)
   if(!ying || !lian || !no) {
-    sendMsgByReplyToken("LINE暱稱格式不合規", eventObj.replyToken)
-    return
-  }
-  let {location, people, doing} = transferOldMsg({msg: msgTxt, ying, lian, no})
-  if(!location || !people || people.length < 2) {
-    sendMsgByReplyToken(correctMessage, eventObj.replyToken)
+    // sendMsgByReplyToken("LINE暱稱格式不合規", eventObj.replyToken)
     return
   }
   let {isOk, ban, studentNoList, tempMsg} = await getLianTemplAndBreakPoint({ying, lian, no})
   if(!isOk) {
-    sendMsgByReplyToken("還沒有該連的模板DATA", eventObj.replyToken)
+    // sendMsgByReplyToken("還沒有該連的模板DATA", eventObj.replyToken)
     return
   }
+
+  //先检查第X班 是否存在
+  let regClass = /第\S班\s/
+  let matchClass = msgTxt.match(regClass)
+  let msg2 = ""
+  if(matchClass && matchClass.index > 10) {
+    msg2 = msgTxt.substring(matchClass.index)
+  }
+
+
+  let {location, people, doing} = transferOldMsg({msg: msgTxt, ying, lian, no})
+  if(!location || !people || people.length < 2) {
+    // sendMsgByReplyToken(correctMessage, eventObj.replyToken)
+    return
+  }
+  
   let dragonMsg = await getCurrentTempl({ying, lian, ban, studentNoList})
   dragonMsg = fitMessage({originalText: dragonMsg, ying, lian, no, name, location, people, doing})
   if(!dragonMsg) {
     functions.logger.warn("在handleOldReport裡 沒有dragonMsg消息")
     return
   }
-  functions.logger.log("在handleOldReport裡 看一下 dragonMsg: ", dragonMsg)
   let sendMsg = tempMsg + dragonMsg
-  sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+  
+  functions.logger.log("傳來的文字 msg2.length: ", msg2.length)
+  functions.logger.log("計算出的文字 dragonMsg.length: ", dragonMsg.length)
 
   let storData = {
     ying, lian, ban, userId, displayName,
-    msg: dragonMsg, groupId
+    msg: msg2.length > 100 ? msg2 : dragonMsg, groupId
   }
+
+  if(dragonMsg.length >= msg2.length + 3 && dragonMsg.length <= msg2.length + 24) {
+    functions.logger.log("dragonMsg 竟然比msg2 多")
+    functions.logger.log("也就是 出現了有人漏了一個他人的消息")
+    functions.logger.log("msg2: ", msg2)
+    functions.logger.log("dragonMsg: ", dragonMsg)
+    storData.msg = dragonMsg
+    // sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+  }
+
+  functions.logger.log("storData::")
+  functions.logger.log(storData)
+
   await storageMessage(storData)
   return {cyzMsg: "你執行完了全部"}
 }
@@ -350,7 +412,6 @@ function getWhereWithDoing(plainTxt) {
   }
   return {location, people, doing}
 }
-
 
 
 /******** 處理長官們發"查看"命令 ********/
@@ -519,18 +580,18 @@ async function getCurrentTempl({ying, lian, ban, studentNoList} = {}) {
   let s2 = ":00:00_000"
   let hr = nowDate.getHours()
   let middle = "00"
-  if(hr >= 20) middle = "20"
+  if(hr >= 22) middle = "22"
   else if(hr >= 16) middle = "16"
   else if(hr >= 12) middle = "12"
   else if(hr >= 8) middle = "08"
   let startIndex = s1 + middle + s2
-  let c = admin.firestore().collection('J6_Msg')
 
-  functions.logger.info("當前的營: ", ying)
-  functions.logger.info("當前的連: ", lian)
-  functions.logger.info("當前的班: ", ban)
-  functions.logger.info("startIndex: ", startIndex)
-  functions.logger.info(" ")
+  if(middle === "16") {
+    startIndex = s1 + middle + ":20:00_000"
+  }
+
+  const db = admin.firestore()
+  let c = db.collection('J6_Msg')
 
   let q = c.where("ying", "==", ying)
   q = q.where("lian", "==", lian)
