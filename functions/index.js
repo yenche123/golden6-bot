@@ -579,9 +579,14 @@ async function getCurrentTempl({ying, lian, ban, studentNoList} = {}) {
   let s1 = "" + yy + "/" + mm + "/" + dd + " "
   let s2 = ":00:00_000"
   let hr = nowDate.getHours()
+  let min = nowDate.getMinutes()
   let middle = "00"
   if(hr >= 22) middle = "22"
-  else if(hr >= 16) middle = "16"
+  else if(hr >= 17) middle = "16"
+  else if(hr === 16) {
+    if(min >= 20) middle = "16"
+    else middle = "12"
+  }
   else if(hr >= 12) middle = "12"
   else if(hr >= 8) middle = "08"
   let startIndex = s1 + middle + s2
