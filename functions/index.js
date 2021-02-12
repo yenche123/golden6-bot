@@ -218,7 +218,7 @@ async function handleReport(eventObj) {
     return
   }
   
-  let dragonMsg = await getCurrentTempl({ying, lian, ban, studentNoList})
+  let {dragonMsg} = await getCurrentTempl({ying, lian, ban, studentNoList})
   dragonMsg = fitMessage({originalText: dragonMsg, ying, lian, no, name, location, people, doing})
   if(!dragonMsg) {
     functions.logger.warn("沒有dragonMsg消息")
@@ -279,7 +279,7 @@ async function handleOldReport(eventObj) {
     return
   }
   
-  let dragonMsg = await getCurrentTempl({ying, lian, ban, studentNoList})
+  let {dragonMsg, lastSendStamp = 0} = await getCurrentTempl({ying, lian, ban, studentNoList})
   dragonMsg = fitMessage({originalText: dragonMsg, ying, lian, no, name, location, people, doing})
   if(!dragonMsg) {
     functions.logger.warn("在handleOldReport裡 沒有dragonMsg消息")
@@ -292,8 +292,11 @@ async function handleOldReport(eventObj) {
 
   let storData = {
     ying, lian, ban, userId, displayName,
-    msg: msg2.length > 100 ? msg2 : dragonMsg, groupId
+    msg: msg2.length > 100 ? msg2 : dragonMsg,
+    groupId,
   }
+
+  let now = Date.now()
 
   if(dragonMsg.length >= msg2.length + 3 && dragonMsg.length <= msg2.length + 24) {
     functions.logger.log("dragonMsg 竟然比msg2 多")
@@ -301,7 +304,11 @@ async function handleOldReport(eventObj) {
     functions.logger.log("msg2: ", msg2)
     functions.logger.log("dragonMsg: ", dragonMsg)
     storData.msg = dragonMsg
-    // sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+    sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+  }
+  else if(now < lastSendStamp + (1000 * 10)) {
+    functions.logger.log("========  十秒内多條消息  =======")
+    sendMsgByReplyToken(sendMsg, eventObj.replyToken)
   }
 
   functions.logger.log("storData::")
@@ -607,11 +614,11 @@ async function getCurrentTempl({ying, lian, ban, studentNoList} = {}) {
 
   let resForStartIndex = await q.get()
   if(resForStartIndex.empty) {
-    return getEmptyMsg({ying, lian, studentNoList, ban})
+    return { dragonMsg: getEmptyMsg({ying, lian, studentNoList, ban}), lastSendStamp: 0 }
   }
   let firstObj = resForStartIndex.docs[0]
   let firstData = firstObj.data()
-  return firstData.msg
+  return {dragonMsg: firstData.msg, lastSendStamp: firstData.createStamp || 0}
 }
 
 function getEmptyMsg({ying, lian, studentNoList, ban} = {}) {
