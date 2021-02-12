@@ -298,18 +298,21 @@ async function handleOldReport(eventObj) {
 
   let now = Date.now()
 
-  if(dragonMsg.length >= msg2.length + 3 && dragonMsg.length <= msg2.length + 24) {
+  if(now < lastSendStamp + (1000 * 10)) {
+    functions.logger.log("========  十秒内多條消息  =======")
+    functions.logger.log("差了 " + (now - lastSendStamp) + " 毫秒")
+    storData.msg = dragonMsg
+    sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+  }
+  else if(dragonMsg.length >= msg2.length + 3 && dragonMsg.length <= msg2.length + 24) {
     functions.logger.log("dragonMsg 竟然比msg2 多")
     functions.logger.log("也就是 出現了有人漏了一個他人的消息")
     functions.logger.log("msg2: ", msg2)
     functions.logger.log("dragonMsg: ", dragonMsg)
     storData.msg = dragonMsg
-    sendMsgByReplyToken(sendMsg, eventObj.replyToken)
+    // sendMsgByReplyToken(sendMsg, eventObj.replyToken)
   }
-  else if(now < lastSendStamp + (1000 * 10)) {
-    functions.logger.log("========  十秒内多條消息  =======")
-    sendMsgByReplyToken(sendMsg, eventObj.replyToken)
-  }
+  
 
   functions.logger.log("storData::")
   functions.logger.log(storData)
