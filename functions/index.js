@@ -298,8 +298,8 @@ async function handleOldReport(eventObj) {
 
   let now = Date.now()
 
-  if(now < lastSendStamp + (1000 * 10)) {
-    functions.logger.log("========  十秒内多條消息  =======")
+  if(now < lastSendStamp + (1000 * 9)) {
+    functions.logger.log("========  9秒内多條消息  =======")
     functions.logger.log("差了 " + (now - lastSendStamp) + " 毫秒")
     storData.msg = dragonMsg
     sendMsgByReplyToken(sendMsg, eventObj.replyToken)
